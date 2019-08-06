@@ -81,30 +81,36 @@ def bruker_get_acqus_params(file_acqus):
       for line in f:
          two_dollars_match = acqus_re_two_dollars.match(line)
          if two_dollars_match and not two_dollars_flag:
-            # date and time is in the first with leading two dollars 
-            two_dollars_flag = True 
+            # date and time is in the first with leading two dollars
+            two_dollars_flag = True
             date_finish_match = acqus_re_date_finish.match(line)
             if date_finish_match:
                date_finish_string = date_finish_match.group(1)
                try:
                   datetime_finish = datetime.datetime.strptime(date_finish_string, '%Y-%m-%d %H:%M:%S.%f %z')
-                  P['Finish_seconds'] = time.mktime(datetime_finish)
+                  #P['Finish_seconds'] =  time.mktime(datetime_finish)
+                  P['Finish_seconds'] = datetime_finish.timestamp()
                   P['Finish_DateTime'] = time.localtime(P['Finish_seconds'])
                   P['Finish_Year'] =     P['Finish_DateTime'].tm_year
 
                except ValueError:
                   print("Internal error: could not interpret date \'{}\' in file \'{}\'".
-                    format(date_finish_string, acqus_file))
+                    format(date_finish_string, file_acqus))
             continue
                
-         date_match= acqus_re_date.match(line)
-         if date_match:
+         date_start_match= acqus_re_date_start.match(line)
+         if date_start_match:
             #
             #  NMR experiment is started at that time
             #
-            P['Start_seconds'] =  float(date_match.group(1))
+            P['Start_seconds'] =  float(date_start_match.group(1))
             P['Start_DateTime'] = time.localtime(P['Start_seconds'])
             P['Start_Year'] =     P['Start_DateTime'].tm_year
+            if P['Finish_seconds']:
+               P['NMR_Total_Time'] = P['Finish_seconds'] - P['Start_seconds']
+               if P['NMR_Total_Time'] > Maximum_NMR_Time:
+                  #               P['NMR_Total_Time'] = 0
+                  P['Error'] = True
             continue
 
          probe_match= acqus_re_probe.match(line)
@@ -163,22 +169,23 @@ def bruker_get_acqus_params(file_acqus):
       get_1H_MHz(P, nuc_list, bf_list)
 
       acqus_path = path.dirname(path.normpath(file_acqus))
-      for fidser in ["fid", "ser"]:
-         file_fidser= path.join(acqus_path, fidser)
-         if path.isfile(file_fidser):
-            #
-            # Experiment is finished at the moment of the modification time of 'fid' or
-            # 'ser' file in the current directory
-            #
-            P['Finish_seconds'] =  float(stat(file_fidser).st_mtime)
-            P['Finish_DateTime'] = time.localtime(P['Finish_seconds'])
-            P['Finish_Year'] =     P['Start_DateTime'].tm_year
-            P['NMR_Total_Time']=   P['Finish_seconds'] - P['Start_seconds']
-            if P['NMR_Total_Time'] > Maximum_NMR_Time:
-#               P['NMR_Total_Time'] = 0
-               P['Error'] = True
+      if not P['Finish_seconds']:
+         for fidser in ["fid", "ser"]:
+            file_fidser= path.join(acqus_path, fidser)
+            if path.isfile(file_fidser):
+               #
+               # Experiment is finished at the moment of the modification time of 'fid' or
+               # 'ser' file in the current directory
+               #
+               P['Finish_seconds'] =  float(stat(file_fidser).st_mtime)
+               P['Finish_DateTime'] = time.localtime(P['Finish_seconds'])
+               P['Finish_Year'] =     P['Start_DateTime'].tm_year
+               P['NMR_Total_Time']=   P['Finish_seconds'] - P['Start_seconds']
+               if P['NMR_Total_Time'] > Maximum_NMR_Time:
+   #               P['NMR_Total_Time'] = 0
+                  P['Error'] = True
 
-            break
+               break
       
       if P['NMR_Total_Time'] == None:
          P['NMR_Total_Time'] = 0
